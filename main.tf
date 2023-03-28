@@ -8,7 +8,7 @@ provider "aws" {
 data "aws_availability_zones" "available" {}
 
 locals {
-  cluster_name = "education-eks-${random_string.suffix.result}"
+  cluster_name = var.eks_name
 }
 
 resource "random_string" "suffix" {
@@ -20,7 +20,7 @@ module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "3.19.0"
 
-  name = "education-vpc"
+  name = var.vpc_name
 
   cidr = "10.0.0.0/16"
   azs  = slice(data.aws_availability_zones.available.names, 0, 3)
@@ -33,12 +33,12 @@ module "vpc" {
   enable_dns_hostnames = true
 
   public_subnet_tags = {
-    "kubernetes.io/cluster/${local.cluster_name}" = "shared"
+    "kubernetes.io/cluster/${var.eks_name}" = "shared"
     "kubernetes.io/role/elb"                      = 1
   }
 
   private_subnet_tags = {
-    "kubernetes.io/cluster/${local.cluster_name}" = "shared"
+    "kubernetes.io/cluster/${var.eks_name}" = "shared"
     "kubernetes.io/role/internal-elb"             = 1
   }
 }
@@ -47,7 +47,7 @@ module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "19.5.1"
 
-  cluster_name    = local.cluster_name
+  cluster_name    = var.eks_name
   cluster_version = "1.24"
 
   vpc_id                         = module.vpc.vpc_id
@@ -66,7 +66,7 @@ module "eks" {
       instance_types = ["t3.small"]
 
       min_size     = 1
-      max_size     = 3
+      max_size     = 2
       desired_size = 2
     }
 
@@ -93,14 +93,14 @@ module "irsa-ebs-csi" {
   version = "4.7.0"
 
   create_role                   = true
-  role_name                     = "AmazonEKSTFEBSCSIRole-${module.eks.cluster_name}"
+  role_name                     = "AmazonEKSTFEBSCSIRole-${var.eks_name}"
   provider_url                  = module.eks.oidc_provider
   role_policy_arns              = [data.aws_iam_policy.ebs_csi_policy.arn]
   oidc_fully_qualified_subjects = ["system:serviceaccount:kube-system:ebs-csi-controller-sa"]
 }
 
 resource "aws_eks_addon" "ebs-csi" {
-  cluster_name             = module.eks.cluster_name
+  cluster_name             = var.eks_name
   addon_name               = "aws-ebs-csi-driver"
   addon_version            = "v1.5.2-eksbuild.1"
   service_account_role_arn = module.irsa-ebs-csi.iam_role_arn
